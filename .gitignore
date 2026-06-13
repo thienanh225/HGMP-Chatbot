@@ -1,0 +1,32 @@
+# Secrets — NEVER commit
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Data / logs (ephemeral; use webhook for durable records)
+data/
+tools/*.csv
+
+# Vector DB (rebuilt from knowledge/ via ingest/build_index.py)
+chroma_db/
+*.chroma/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Streamlit cache
+.streamlit/cache/
