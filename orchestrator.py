@@ -20,7 +20,7 @@ import logging
 
 from contract import ChatRequest, ChatResponse
 from escalation import clean_reply, notify, parse_route
-from gateway import GatewaySettings, complete
+from gateway import GatewaySettings, complete_with_fallback
 from guardrail import HANDOFF_MESSAGE, classify_question
 from prompts import build_system_prompt
 from retrieval import format_context, retrieve
@@ -46,10 +46,12 @@ def handle_chat(req: ChatRequest, settings: GatewaySettings) -> ChatResponse:
 
     # ---- raw: bare model, no guardrail / prompt / KB (rig baseline) ----------
     if req.config == "raw":
-        reply = complete(settings.answer_model, [{"role": "user", "content": req.message}],
-                         api_key=settings.api_key, max_tokens=settings.max_tokens)
+        reply, model_used = complete_with_fallback(
+            settings.fallback_models, [{"role": "user", "content": req.message}],
+            api_key=settings.api_key, max_tokens=settings.max_tokens,
+        )
         return ChatResponse(answer=reply.strip(), route=None, sources=[],
-                            model_used=settings.answer_model, config=req.config)
+                            model_used=model_used, config=req.config)
 
     # ---- 1. medical safety gate (before generation) -------------------------
     history = _history(req.session_id)
@@ -76,8 +78,10 @@ def handle_chat(req: ChatRequest, settings: GatewaySettings) -> ChatResponse:
     logger.info("chat | session=%s | config=%s | model=%s | audience=%s | chunks=%d",
                 req.session_id, req.config, settings.answer_model, req.audience, len(chunks))
 
-    raw_reply = complete(settings.answer_model, messages,
-                         api_key=settings.api_key, max_tokens=settings.max_tokens)
+    raw_reply, model_used = complete_with_fallback(
+        settings.fallback_models, messages,
+        api_key=settings.api_key, max_tokens=settings.max_tokens,
+    )
 
     # ---- 4. post-process: ROUTE tag, clean reply, dispatch ------------------
     route = parse_route(raw_reply)
@@ -92,4 +96,4 @@ def handle_chat(req: ChatRequest, settings: GatewaySettings) -> ChatResponse:
     ])[-MAX_HISTORY_TURNS * 2:]
 
     return ChatResponse(answer=answer, route=route, sources=[c["id"] for c in chunks],
-                        model_used=settings.answer_model, config=req.config)
+                        model_used=model_used, config=req.config)

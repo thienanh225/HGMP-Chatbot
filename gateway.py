@@ -15,6 +15,7 @@ full pipeline (contract → retrieval → routing) can run without API keys.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -27,37 +28,41 @@ PROVIDERS: dict[str, dict] = {
     "Google Gemini": {
         "key_env": "GEMINI_API_KEY",
         "prefix": "gemini/",
-        "models": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"],
-        "classifier": "gemini/gemini-2.5-flash-lite",
+        # Free-tier RPD: gemini-2.5-flash=20, gemini-3.1-flash-lite=500, gemma-4=1500
+        # gemini-2.5-pro removed (0 free quota)
+        "models": [
+            "gemini-2.5-flash",        # confirmed working, best quality
+            "gemini-3.1-flash-lite",   # 500 RPD — best free daily limit
+            "gemma-4-26b-a4b-it",      # 1500 RPD, 262K context
+            "gemma-4-31b-it",          # 1500 RPD, largest Google free model
+        ],
+        "classifier": "gemini/gemini-3.1-flash-lite",  # 500 RPD >> 20 RPD of flash-lite
         "help": "https://aistudio.google.com/apikey",
     },
     "Groq": {
         "key_env": "GROQ_API_KEY",
         "prefix": "groq/",
-        # qwen-2.5-32b deprecated Apr 2025 → qwen/qwen3-32b
-        "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b"],
+        "models": ["llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct", "llama-3.1-8b-instant", "qwen/qwen3-32b"],
         "classifier": "groq/llama-3.1-8b-instant",
         "help": "https://console.groq.com/keys",
     },
     "OpenRouter": {
         "key_env": "OPENROUTER_API_KEY",
         "prefix": "openrouter/",
-        # OpenRouter reaches frontier models from many providers with one key.
+        # Free models only. Verify IDs at openrouter.ai/models?max_price=0
+        # :free suffix required — without it OpenRouter charges credits.
         "models": [
-            "anthropic/claude-sonnet-4.5",   # updated from claude-3.5-sonnet
-            "openai/gpt-4o",
-            "google/gemini-2.0-flash-exp:free",
-            "meta-llama/llama-3.3-70b-instruct",
+            "meta-llama/llama-3.3-70b-instruct:free",   # 376M weekly tokens, reliable
+            "openai/gpt-oss-120b:free",                  # 214B weekly tokens
+            "google/gemma-4-26b-a4b-it:free",              # 4.38B weekly tokens
         ],
-        "classifier": "openrouter/openai/gpt-4o-mini",
+        "classifier": "openrouter/meta-llama/llama-3.3-70b-instruct:free",
         "help": "https://openrouter.ai/keys",
     },
     "Cerebras": {
         "key_env": "CEREBRAS_API_KEY",
         "prefix": "cerebras/",
-        # All Llama/Qwen models deprecated Feb–May 2026; only gpt-oss-120b on free public endpoints.
-        # Use the "Nâng cao" field to try dedicated-endpoint models if you have access.
-        "models": ["gpt-oss-120b"],
+        "models": ["gpt-oss-120b", "zai-glm-4.7"],  # zai-glm-4.7 is Preview
         "classifier": "cerebras/gpt-oss-120b",
         "help": "https://cloud.cerebras.ai/",
     },
@@ -97,6 +102,13 @@ class GatewaySettings:
     def classifier_model(self) -> str:
         return classifier_model_for(self.provider, self.answer_model)
 
+    @property
+    def fallback_models(self) -> list[str]:
+        """Selected model first, then remaining provider models as silent fallbacks."""
+        provider_models = PROVIDERS.get(self.provider, {}).get("models", [])
+        ordered = [self.model] + [m for m in provider_models if m != self.model]
+        return [to_litellm_model(self.provider, m) for m in ordered]
+
 
 # ---------------------------------------------------------------------------
 # Completion
@@ -111,6 +123,30 @@ def _stub_reply(messages: list[dict[str, str]]) -> str:
         "Khi anh/chị nhập API key của một nhà cung cấp, hệ thống sẽ dùng mô hình thật.\n"
         f"(Đã nhận câu hỏi: {user[:160]})"
     )
+
+
+def complete_with_fallback(
+    models: list[str],
+    messages: list[dict[str, str]],
+    api_key: str = "",
+    max_tokens: int = 1000,
+) -> tuple[str, str]:
+    """Try models in order; silently skip to next on 429 / quota exhaustion.
+
+    Returns (reply, model_used_litellm_string).
+    """
+    last_err: Exception | None = None
+    for model in models:
+        try:
+            return complete(model, messages, api_key=api_key, max_tokens=max_tokens), model
+        except Exception as exc:
+            s = str(exc).lower()
+            if "429" in s or "rate" in s or "quota" in s or "limit" in s:
+                logger.warning("rate-limited: %s — trying next model", model)
+                last_err = exc
+                continue
+            raise
+    raise last_err or RuntimeError("all models exhausted")
 
 
 def complete(model: str, messages: list[dict[str, str]], api_key: str = "", max_tokens: int = 1000) -> str:
@@ -132,4 +168,6 @@ def complete(model: str, messages: list[dict[str, str]], api_key: str = "", max_
         kwargs["api_key"] = api_key
 
     response = litellm.completion(**kwargs)
-    return response.choices[0].message.content or ""
+    content = response.choices[0].message.content or ""
+    # ponytail: strip <think>…</think> blocks from reasoning models (Qwen3, etc.)
+    return re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
