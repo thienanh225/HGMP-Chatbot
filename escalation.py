@@ -60,12 +60,29 @@ def notify(route: str, session_id: str = "?", audience: str = "?", message: str 
 # Destinations
 # ---------------------------------------------------------------------------
 
+class _PostRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep POST + body on Google Apps Script's 302 redirect.
+
+    urllib.request converts POST→GET on 302 by default (RFC 2616).  Apps Script
+    executes doPost *after* the redirect, so the default handler drops the body
+    and calls doGet instead — the sheet never gets written.  This handler
+    re-issues the POST with the original body to the redirect target.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return urllib.request.Request(
+            newurl, data=req.data, method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+
+
 def _post_webhook(url: str, payload: dict) -> bool:
-    """POST a JSON record to the Apps Script Web App. True on 2xx/3xx."""
+    """POST a JSON record to the Apps Script Web App. True on 2xx."""
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=6) as resp:  # noqa: S310 (trusted user URL)
+        opener = urllib.request.build_opener(_PostRedirectHandler())
+        with opener.open(req, timeout=6) as resp:  # noqa: S310 (trusted user URL)
             return resp.status < 400
     except Exception:
         logger.exception("Webhook logging failed — falling back")

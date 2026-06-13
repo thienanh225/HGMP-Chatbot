@@ -34,7 +34,8 @@ PROVIDERS: dict[str, dict] = {
     "Groq": {
         "key_env": "GROQ_API_KEY",
         "prefix": "groq/",
-        "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen-2.5-32b"],
+        # qwen-2.5-32b deprecated Apr 2025 → qwen/qwen3-32b
+        "models": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b"],
         "classifier": "groq/llama-3.1-8b-instant",
         "help": "https://console.groq.com/keys",
     },
@@ -43,7 +44,7 @@ PROVIDERS: dict[str, dict] = {
         "prefix": "openrouter/",
         # OpenRouter reaches frontier models from many providers with one key.
         "models": [
-            "anthropic/claude-3.5-sonnet",
+            "anthropic/claude-sonnet-4.5",   # updated from claude-3.5-sonnet
             "openai/gpt-4o",
             "google/gemini-2.0-flash-exp:free",
             "meta-llama/llama-3.3-70b-instruct",
@@ -54,9 +55,10 @@ PROVIDERS: dict[str, dict] = {
     "Cerebras": {
         "key_env": "CEREBRAS_API_KEY",
         "prefix": "cerebras/",
-        # Model ids change over time — adjust here or type one in the UI "Nâng cao" field.
-        "models": ["llama-3.3-70b", "llama3.1-8b", "qwen-3-32b"],
-        "classifier": "cerebras/llama3.1-8b",
+        # All Llama/Qwen models deprecated Feb–May 2026; only gpt-oss-120b on free public endpoints.
+        # Use the "Nâng cao" field to try dedicated-endpoint models if you have access.
+        "models": ["gpt-oss-120b"],
+        "classifier": "cerebras/gpt-oss-120b",
         "help": "https://cloud.cerebras.ai/",
     },
 }

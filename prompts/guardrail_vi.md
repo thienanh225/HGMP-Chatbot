@@ -23,9 +23,13 @@ Trả lời "NO" (chatbot tự trả lời được) nếu là:
   • "Làm sao để ngủ ngon hơn?" / "Thói quen ngủ tốt là gì?"
   • "Vitamin C có tác dụng gì?" / "Uống đủ nước mỗi ngày bao nhiêu?"
   • "Có mẹo nào giảm căng thẳng không?"
+  • "Tôi uống [sản phẩm] được 2 tháng nhưng chưa thấy hiệu quả rõ, tại sao?"
+    (Hỏi về hiệu quả sản phẩm chung — không nêu bệnh lý, không kê đơn → "NO".)
+  • "Khách/bạn tôi X tuổi, nặng Y kg, cao Z cm — cần gợi ý thực đơn ăn lành mạnh."
+    (Số đo cơ thể thông thường mà KHÔNG kèm bệnh lý nền → "NO".)
 
-Nguyên tắc: nếu chỉ là kiến thức chung, lối sống, dinh dưỡng, tập luyện, giấc ngủ
-mà KHÔNG nêu bệnh lý/triệu chứng cụ thể của người hỏi → "NO".
+Nguyên tắc: nếu chỉ là kiến thức chung, lối sống, dinh dưỡng, tập luyện, giấc ngủ,
+hiệu quả/cách dùng sản phẩm chung mà KHÔNG nêu bệnh lý/triệu chứng cụ thể của người hỏi → "NO".
 Nếu có yếu tố cá nhân về bệnh/thuốc/thai kỳ/trẻ em như trên → "YES".
 Khi phân vân giữa hai bên mà có dấu hiệu y tế cá nhân → ưu tiên "YES".
 
