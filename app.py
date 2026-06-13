@@ -140,7 +140,7 @@ with st.sidebar:
     if st.button("Gửi góp ý", use_container_width=True):
         if feedback.strip():
             dest = log_feedback(feedback.strip(), st.session_state.session_id, _all_secrets())
-            st.success("Đã ghi nhận góp ý. Cảm ơn anh/chị!" + (" (Sheet)" if dest == "sheet" else ""))
+            st.success("Đã ghi nhận góp ý. Cảm ơn anh/chị!" + (" (Sheet)" if dest == "webhook" else " (CSV)"))
         else:
             st.warning("Vui lòng nhập nội dung trước khi gửi.")
 
