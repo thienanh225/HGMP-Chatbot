@@ -76,12 +76,21 @@ if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "model_locked" not in st.session_state:
+    st.session_state.model_locked = False
+if "locked_settings" not in st.session_state:
+    st.session_state.locked_settings = {}
+if "feedback_given" not in st.session_state:
+    st.session_state.feedback_given = {}  # turn_id → "like" | "dislike"
 
 
 def _reset_chat() -> None:
     orchestrator.reset_session(st.session_state.session_id)
     st.session_state.session_id = str(uuid.uuid4())
     st.session_state.messages = []
+    st.session_state.model_locked = False
+    st.session_state.locked_settings = {}
+    # ponytail: keep feedback_given — no reason to wipe history across chats
 
 
 if not _check_password():
@@ -89,13 +98,12 @@ if not _check_password():
 
 
 # ---------------------------------------------------------------------------
-# Sidebar — model switcher, audience, config, feedback
+# Sidebar — model switcher, audience, config
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ Mô hình")
     st.caption("🔑 Khóa API được đọc từ secrets.toml phía máy chủ — giao diện không hiển thị và không lưu khóa.")
 
-    # Only providers that actually have a key configured (server-side) are offered.
     configured = {n: m for n, m in PROVIDERS.items() if _secret(m["key_env"]).strip()}
     model_opts = [(f"{n} — {mdl}", n, mdl) for n, m in configured.items() for mdl in m["models"]]
     model_opts.append((OFFLINE, OFFLINE, "stub/demo"))
@@ -104,45 +112,59 @@ with st.sidebar:
     if not configured:
         st.warning("Chưa có khóa API nào trong secrets.toml. Hãy điền khóa, hoặc dùng Offline (demo).")
 
-    sel = st.selectbox("Chọn mô hình để trò chuyện", labels)
-    _, provider, model_id = model_opts[labels.index(sel)]
+    locked = st.session_state.model_locked
+    ls = st.session_state.locked_settings
 
-    with st.expander("Nâng cao — tự nhập model"):
-        if configured:
-            adv_p = st.selectbox("Provider", list(configured))
-            adv_m = st.text_input("Model id", placeholder=configured[adv_p]["models"][0])
-            if adv_m.strip():
-                provider, model_id = adv_p, adv_m.strip()
-        else:
-            st.caption("Cần ít nhất một khóa API trong secrets.toml.")
+    if locked:
+        # ponytail: show locked state; no widget needed
+        st.info(f"🔒 **{ls.get('provider')} — {ls.get('model_id')}**  \nĐổi mô hình → bắt đầu cuộc trò chuyện mới.")
+        provider  = ls["provider"]
+        model_id  = ls["model_id"]
+        config    = ls["config"]
+    else:
+        sel = st.selectbox("Chọn mô hình để trò chuyện", labels)
+        _, provider, model_id = model_opts[labels.index(sel)]
+
+        with st.expander("Nâng cao — tự nhập model"):
+            if configured:
+                adv_p = st.selectbox("Provider", list(configured))
+                adv_m = st.text_input("Model id", placeholder=configured[adv_p]["models"][0])
+                if adv_m.strip():
+                    provider, model_id = adv_p, adv_m.strip()
+            else:
+                st.caption("Cần ít nhất một khóa API trong secrets.toml.")
+
+        st.caption(f"Đang dùng: **{provider} — {model_id}**")
 
     # Key resolved server-side from secrets; never shown in the UI.
     api_key = "" if provider == OFFLINE else _secret(PROVIDERS.get(provider, {}).get("key_env", ""))
-    st.caption(f"Đang dùng: **{provider} — {model_id}**")
 
     st.divider()
     st.header("🎯 Ngữ cảnh")
     audience_label = st.radio("Đối tượng", ["Khách hàng (B2C)", "Nhân viên phân phối (B2B)"])
     audience = "b2b" if audience_label.startswith("Nhân viên") else "b2c"
 
-    config = st.radio(
-        "Chế độ (rig)", ["full", "harness", "raw"],
-        captions=["Prompt + guardrail + kho tri thức (sản xuất)",
-                  "Prompt + guardrail (không kho tri thức)",
-                  "Mô hình trần (so sánh đối chứng)"],
-    )
+    if not locked:
+        config = st.radio(
+            "Chế độ (rig)", ["full", "harness", "raw"],
+            captions=["Prompt + guardrail + kho tri thức (sản xuất)",
+                      "Prompt + guardrail (không kho tri thức)",
+                      "Mô hình trần (so sánh đối chứng)"],
+        )
 
     st.button("🧹 Cuộc trò chuyện mới", on_click=_reset_chat, use_container_width=True)
 
     st.divider()
-    st.header("💬 Góp ý")
+    st.header("💬 Góp ý chung")
     feedback = st.text_area("Nhận xét về chatbot:", key="feedback_box")
     if st.button("Gửi góp ý", use_container_width=True):
         if feedback.strip():
-            dest = log_feedback(feedback.strip(), st.session_state.session_id, _all_secrets())
+            dest = log_feedback(feedback.strip(), st.session_state.session_id,
+                                secrets=_all_secrets())
             st.success("Đã ghi nhận góp ý. Cảm ơn anh/chị!" + (" (Sheet)" if dest == "webhook" else " (CSV)"))
         else:
             st.warning("Vui lòng nhập nội dung trước khi gửi.")
+
 
 settings = GatewaySettings(
     provider=provider, model=model_id, api_key=api_key,
@@ -158,11 +180,37 @@ st.caption(
     "không phải là thuốc và không có tác dụng thay thế thuốc chữa bệnh."
 )
 
+# Render message history with per-turn feedback buttons on assistant messages
 for m in st.session_state.messages:
     with st.chat_message(m["role"]):
         st.write(m["content"])
         if m.get("meta"):
             st.caption(m["meta"])
+
+        if m["role"] == "assistant":
+            turn_id = m.get("turn_id", "")
+            given = st.session_state.feedback_given.get(turn_id)
+
+            if turn_id and given is None:
+                col1, col2, _ = st.columns([1, 1, 10])
+                with col1:
+                    if st.button("👍", key=f"like_{turn_id}", help="Câu trả lời tốt"):
+                        st.session_state.feedback_given[turn_id] = "like"
+                        log_feedback("", st.session_state.session_id,
+                                     turn_id=turn_id, rating="like",
+                                     secrets=_all_secrets())
+                        st.rerun()
+                with col2:
+                    if st.button("👎", key=f"dislike_{turn_id}", help="Câu trả lời chưa tốt"):
+                        st.session_state.feedback_given[turn_id] = "dislike"
+                        log_feedback("", st.session_state.session_id,
+                                     turn_id=turn_id, rating="dislike",
+                                     secrets=_all_secrets())
+                        st.rerun()
+            elif turn_id and given:
+                icon = "👍" if given == "like" else "👎"
+                st.caption(f"{icon} Cảm ơn góp ý của anh/chị!")
+
 
 if question := st.chat_input("Nhập câu hỏi…"):
     st.session_state.messages.append({"role": "user", "content": question})
@@ -192,13 +240,23 @@ if question := st.chat_input("Nhập câu hỏi…"):
                     secrets = _all_secrets()
                     if route:
                         log_escalation(question, st.session_state.session_id, route, secrets=secrets)
-                    # Log every turn (all conversations), not just escalations.
                     log_conversation(st.session_state.session_id, audience, resp.model_used,
                                      route, resp.sources, question, answer, secrets=secrets)
-                except Exception as e:  # surface provider/key errors plainly
+                except Exception as e:
                     answer = ("Xin lỗi anh/chị, hệ thống gặp sự cố khi gọi mô hình. "
                               "Vui lòng kiểm tra API key/model hoặc thử lại sau ít phút.")
                     meta = f"lỗi: {type(e).__name__}"
+
+            turn_id = str(uuid.uuid4())
             st.write(answer)
             st.caption(meta)
-            st.session_state.messages.append({"role": "assistant", "content": answer, "meta": meta})
+            st.session_state.messages.append({
+                "role": "assistant", "content": answer, "meta": meta, "turn_id": turn_id,
+            })
+
+            # Lock the model after the first successful turn
+            if not st.session_state.model_locked:
+                st.session_state.model_locked = True
+                st.session_state.locked_settings = {
+                    "provider": provider, "model_id": model_id, "config": config,
+                }

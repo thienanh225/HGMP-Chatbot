@@ -124,9 +124,10 @@ def log_escalation(question: str, user_id: str, route: str = "qualified-person",
     return _dispatch("escalations", header, row, ESCALATION_CSV, secrets)
 
 
-def log_feedback(text: str, user_id: str, secrets: dict | None = None) -> str:
-    header = ["timestamp", "user_id", "feedback"]
-    row = [_now(), user_id, text]
+def log_feedback(text: str, user_id: str, turn_id: str = "",
+                 rating: str = "", secrets: dict | None = None) -> str:
+    header = ["timestamp", "user_id", "turn_id", "rating", "comment"]
+    row = [_now(), user_id, turn_id, rating, text]
     return _dispatch("feedback", header, row, FEEDBACK_CSV, secrets)
 
 
