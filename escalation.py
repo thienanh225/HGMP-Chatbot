@@ -18,9 +18,18 @@ import csv
 import json
 import logging
 import re
+import ssl
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
+
+# macOS Python (python.org installer) doesn't use system certs by default.
+# certifi ships with litellm so it's always available in this venv.
+try:
+    import certifi
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    _SSL_CTX = ssl.create_default_context()
 
 logger = logging.getLogger(__name__)
 
@@ -60,29 +69,19 @@ def notify(route: str, session_id: str = "?", audience: str = "?", message: str 
 # Destinations
 # ---------------------------------------------------------------------------
 
-class _PostRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Keep POST + body on Google Apps Script's 302 redirect.
-
-    urllib.request converts POST→GET on 302 by default (RFC 2616).  Apps Script
-    executes doPost *after* the redirect, so the default handler drops the body
-    and calls doGet instead — the sheet never gets written.  This handler
-    re-issues the POST with the original body to the redirect target.
-    """
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return urllib.request.Request(
-            newurl, data=req.data, method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-
-
 def _post_webhook(url: str, payload: dict) -> bool:
-    """POST a JSON record to the Apps Script Web App. True on 2xx."""
+    """POST a JSON record to the Apps Script Web App. True on 2xx.
+
+    Apps Script responds with a 302 redirect to script.googleusercontent.com,
+    encoding the POST data in the user_content_key query param. The redirect
+    target only accepts GET — so the default POST→GET conversion on 302 is
+    correct. _PostRedirectHandler (re-POST) causes 405 and must not be used.
+    """
     try:
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-        opener = urllib.request.build_opener(_PostRedirectHandler())
-        with opener.open(req, timeout=6) as resp:  # noqa: S310 (trusted user URL)
+        opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=_SSL_CTX))
+        with opener.open(req, timeout=10) as resp:  # noqa: S310 (trusted user URL)
             return resp.status < 400
     except Exception:
         logger.exception("Webhook logging failed — falling back")
