@@ -65,11 +65,15 @@ def parse_classifier_reply(reply: str) -> bool:
     """Interpret the classifier's raw reply. True = escalate. Pure/testable.
 
     Anything that is not a clear NO is treated as YES (fail-safe).
+    Accepts English YES/NO and Vietnamese equivalents (Có/Không) in case the
+    model replies in the same language as the prompt.
     """
     normalized = (reply or "").strip().upper()
-    if normalized.startswith("NO"):
+    # Accept English and Vietnamese negatives
+    if normalized.startswith("NO") or normalized.startswith("KHÔNG") or normalized.startswith("KHONG"):
         return False
-    if normalized.startswith("YES"):
+    # Accept English and Vietnamese affirmatives
+    if normalized.startswith("YES") or normalized.startswith("CÓ") or normalized.startswith("CO"):
         return True
     logger.warning("Guardrail classifier unclear reply %r — escalating", (reply or "")[:80])
     return True
@@ -106,7 +110,8 @@ def classify_question(question: str, settings: GatewaySettings,
             composed = f"Tin nhắn trước của người dùng:\n{prev}\nCâu hỏi hiện tại: {question}"
         prompt = load_guardrail_prompt().replace("{user_question}", composed)
         reply = complete(model=model, messages=[{"role": "user", "content": prompt}],
-                         api_key=settings.api_key, max_tokens=4)
+                         api_key=settings.api_key, max_tokens=10)
+        logger.info("Guardrail classifier raw reply %r", (reply or "")[:40])
         return parse_classifier_reply(reply)
     except Exception:
         logger.exception("Guardrail classifier failed — escalating by default")
