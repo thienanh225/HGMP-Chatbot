@@ -1,0 +1,10 @@
+# HealthGMP chatbot — Python dependencies
+# Install: pip install -r requirements.txt
+
+streamlit>=1.35
+litellm>=1.50        # model-agnostic gateway: Gemini / Groq / OpenRouter / Mistral / Claude / GPT …
+pydantic>=2.6        # request/response contract
+
+# Logging: free Google Apps Script webhook or local CSV — stdlib only, no dep.
+# Vector RAG (chromadb + BGE-M3) deliberately not included yet — keyword
+# retrieval covers the 8-product catalogue; revisit past ~20 (HANDOFF.md §7).
