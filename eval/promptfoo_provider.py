@@ -11,6 +11,7 @@ API keys are read from the environment (GEMINI_API_KEY, GROQ_API_KEY, ...).
 
 import pathlib
 import sys
+import uuid
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))  # chatbot/ on path
 
@@ -28,14 +29,21 @@ def call_api(prompt, options, context):
         run_guardrail=cfg.get("mode", "full") != "raw",
         retrieval_k=4,
     )
-    question = prompt if isinstance(prompt, str) else str(prompt)
-    req = ChatRequest(
-        message=question,
-        session_id="promptfoo",
-        audience=cfg.get("audience", "b2c"),
-        config=cfg.get("mode", "full"),
-    )
-    resp = orchestrator.handle_chat(req, settings)
+    # Unique session per test case so history never bleeds between cases.
+    session_id = f"promptfoo-{uuid.uuid4()}"
+    audience = cfg.get("audience", "b2c")
+    mode = cfg.get("mode", "full")
+
+    # ponytail: a `turns` var (list) is replayed in order; otherwise single message.
+    vars_ = (context or {}).get("vars", {}) or {}
+    turns = vars_.get("turns")
+    messages = turns if isinstance(turns, list) and turns else [prompt if isinstance(prompt, str) else str(prompt)]
+
+    resp = None
+    for msg in messages:
+        req = ChatRequest(message=str(msg), session_id=session_id, audience=audience, config=mode)
+        resp = orchestrator.handle_chat(req, settings)
+
     return {
         "output": resp.answer,
         "metadata": {

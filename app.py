@@ -225,6 +225,7 @@ if question := st.chat_input("Nhập câu hỏi…"):
             st.warning(f"{warn}. Hãy thêm khóa, hoặc chọn 'Offline (demo)'.")
             st.session_state.messages.append({"role": "assistant", "content": f"⚠️ {warn}."})
         else:
+            turn_id = str(uuid.uuid4())  # stamped on this turn's log row AND its 👍/👎 feedback
             with st.spinner("Đang xử lý…"):
                 req = ChatRequest(message=question, session_id=st.session_state.session_id,
                                   audience=audience, config=config)
@@ -241,13 +242,13 @@ if question := st.chat_input("Nhập câu hỏi…"):
                     if route:
                         log_escalation(question, st.session_state.session_id, route, secrets=secrets)
                     log_conversation(st.session_state.session_id, audience, resp.model_used,
-                                     route, resp.sources, question, answer, secrets=secrets)
+                                     route, resp.sources, question, answer,
+                                     turn_id=turn_id, secrets=secrets)
                 except Exception as e:
                     answer = ("Xin lỗi anh/chị, hệ thống gặp sự cố khi gọi mô hình. "
                               "Vui lòng kiểm tra API key/model hoặc thử lại sau ít phút.")
                     meta = f"lỗi: {type(e).__name__}"
 
-            turn_id = str(uuid.uuid4())
             st.write(answer)
             st.caption(meta)
             st.session_state.messages.append({

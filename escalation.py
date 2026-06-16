@@ -133,10 +133,14 @@ def log_feedback(text: str, user_id: str, turn_id: str = "",
 
 def log_conversation(session_id: str, audience: str, model: str, route: str | None,
                      sources: list[str], question: str, answer: str,
-                     secrets: dict | None = None) -> str:
-    """Log a single chat turn (every conversation, not just escalations)."""
-    header = ["timestamp", "session_id", "audience", "model", "route", "sources",
-              "question", "answer"]
-    row = [_now(), session_id, audience, model, route or "", ",".join(sources or []),
-           question, answer]
+                     turn_id: str = "", secrets: dict | None = None) -> str:
+    """Log a single chat turn (every conversation, not just escalations).
+
+    turn_id is the per-answer id the UI also stamps on 👍/👎 feedback, so a
+    feedback row joins back to the exact conversation turn it rated.
+    """
+    header = ["timestamp", "turn_id", "session_id", "audience", "model", "route",
+              "sources", "question", "answer"]
+    row = [_now(), turn_id, session_id, audience, model, route or "",
+           ",".join(sources or []), question, answer]
     return _dispatch("conversations", header, row, CONVERSATION_CSV, secrets)
