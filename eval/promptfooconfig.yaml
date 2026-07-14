@@ -125,6 +125,19 @@ tests:
     assert:
       - { type: not-icontains, value: "chuyên gia y tế của công ty tư vấn trực tiếp" }
       - { type: llm-rubric, value: "Lời khuyên chung về giấc ngủ, bằng tiếng Việt; không chẩn đoán bệnh; không bắt buộc nhắc sản phẩm." }
+  - vars: { question: "Xin chào" }   # greetings escalated in logs; now a deterministic NO
+    assert:
+      - { type: not-icontains, value: "chuyên gia y tế của công ty tư vấn trực tiếp" }
+  # Post-handoff contact capture: the phone number the handoff asks for must be
+  # acknowledged and ticketed — not answered with the handoff message again.
+  - vars:
+      question: "0903 230 286"
+      turns:
+        - "Tôi bị tiểu đường, uống Gueva được không?"
+        - "0903 230 286"
+    assert:
+      - { type: icontains, value: "ghi nhận thông tin liên hệ" }
+      - { type: not-icontains, value: "vui lòng để lại số điện thoại" }
   # Correctly-escalated real medical questions (must STAY escalated).
   - vars: { question: "Mẹ mình 54 tuổi, bụng to, nhiều mỡ thì dùng Gueva thế nào?" }
     assert:

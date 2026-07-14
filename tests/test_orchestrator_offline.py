@@ -45,6 +45,19 @@ def test_raw_mode_is_bare_model():
     assert resp.model_used == "stub/demo"
 
 
+def test_contact_after_handoff_is_captured_not_reclassified():
+    import orchestrator as orch
+    from guardrail import CONTACT_ACK
+    sid = "mt-contact"
+    orch.reset_session(sid)
+    r1 = orch.handle_chat(ChatRequest(message="Tôi bị tiểu đường, uống Gueva được không?",
+                                      session_id=sid, config="full"), OFFLINE)
+    assert r1.answer == HANDOFF_MESSAGE
+    r2 = orch.handle_chat(ChatRequest(message="0903 230 286", session_id=sid, config="full"), OFFLINE)
+    assert r2.answer == CONTACT_ACK          # thanked, not handed off again
+    assert r2.route == "qualified-person"    # still logged as a ticket (with the phone)
+
+
 def test_context_aware_followup_escalates():
     import orchestrator as orch
     sid = "mt-ctx"

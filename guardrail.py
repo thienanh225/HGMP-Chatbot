@@ -56,6 +56,40 @@ _ALWAYS = re.compile(
     re.IGNORECASE,
 )
 
+# Pure greeting / small talk — never medical. Deterministic shortcut so a
+# "hello" doesn't burn a classifier call (real logs: greetings escalated).
+_GREETING = re.compile(
+    r"^(hi+|hello|hey|alo+|ok(e|ay)?|test(ing)?|thanks?( you)?|"
+    r"(xin )?chào( (em|anh|chị|bạn|shop))?|c(ả|á)m ơn( em| anh| chị| bạn)?)"
+    r"[\s!.,~…]*(ạ|nhé|nha)?[\s!.,~…]*$",
+    re.IGNORECASE,
+)
+
+
+def is_greeting(message: str) -> bool:
+    m = (message or "").strip()
+    return len(m) <= 30 and bool(_GREETING.match(m))
+
+
+# The handoff asks the user to leave a phone/email. When the next message IS
+# that contact info, acknowledge it instead of re-classifying (real logs: a bare
+# phone number got the handoff message again).
+CONTACT_ACK = (
+    "Em đã ghi nhận thông tin liên hệ của anh/chị. Đội ngũ chuyên môn sẽ "
+    "liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn anh/chị!"
+)
+
+_PHONE = re.compile(r"(\+?84|0)?[\s.\-]?(\d[\s.\-]?){8,10}\d")
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+
+
+def is_contact_info(message: str) -> bool:
+    """True if the message looks like contact details (phone and/or email)."""
+    m = (message or "").strip()
+    if len(m) > 120:          # a long sentence is a new question, not a contact
+        return False
+    return bool(_PHONE.search(m) or _EMAIL.search(m))
+
 
 def load_guardrail_prompt() -> str:
     return GUARDRAIL_PROMPT_PATH.read_text(encoding="utf-8")
@@ -98,6 +132,12 @@ def classify_question(question: str, settings: GatewaySettings,
     if not settings.run_guardrail:
         return False
 
+    # Deterministic NO for pure greetings/small talk — no classifier call.
+    # A greeting after a disclosed condition is still just a greeting, so the
+    # shortcut is safe even with context.
+    if is_greeting(question):
+        return False
+
     ctx = [c for c in (context or []) if c and c.strip()]
     model = settings.classifier_model
     if model.startswith("stub/"):
@@ -114,5 +154,9 @@ def classify_question(question: str, settings: GatewaySettings,
         logger.info("Guardrail classifier raw reply %r", (reply or "")[:40])
         return parse_classifier_reply(reply)
     except Exception:
-        logger.exception("Guardrail classifier failed — escalating by default")
-        return True
+        # Classifier down (quota, key, network) ≠ every message is medical.
+        # Blanket-escalating turned whole test days into tickets (see logs
+        # 2026-06-13). The keyword heuristic still catches the hard triggers
+        # (conditions, pregnancy, child dosing, drug interactions) fail-safe.
+        logger.exception("Guardrail classifier failed — using keyword fallback")
+        return keyword_escalate("\n".join([*ctx, question]))

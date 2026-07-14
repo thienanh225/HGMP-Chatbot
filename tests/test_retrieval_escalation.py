@@ -19,9 +19,15 @@ def test_retrieve_finds_relevant_product():
 
 
 def test_retrieve_general_wellness_returns_nothing():
-    # a pure wellness question shouldn't drag in an irrelevant product
-    assert retrieve("Làm sao để ngủ ngon và giảm căng thẳng?", k=3) == [] or \
-        all(c["id"] for c in retrieve("thực đơn lành mạnh", k=3))
+    # a wellness question with no product-domain terms drags in no product
+    assert retrieve("Gợi ý thực đơn ăn uống lành mạnh trong ngày?", k=3) == []
+    assert retrieve("Có mẹo nào giảm căng thẳng không?", k=3) == []
+
+
+def test_retrieve_domain_wellness_maps_to_its_product_only():
+    # sleep is Niasom's domain — a sleep question may surface Niasom, nothing else
+    ids = [c["id"] for c in retrieve("Làm sao để ngủ ngon hơn?", k=3)]
+    assert ids in ([], ["niasom"])
 
 
 def test_parse_and_clean_route():

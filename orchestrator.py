@@ -21,7 +21,7 @@ import logging
 from contract import ChatRequest, ChatResponse
 from escalation import clean_reply, notify, parse_route
 from gateway import GatewaySettings, complete_with_fallback
-from guardrail import HANDOFF_MESSAGE, classify_question
+from guardrail import CONTACT_ACK, HANDOFF_MESSAGE, classify_question, is_contact_info
 from prompts import build_system_prompt
 from retrieval import format_context, retrieve
 
@@ -53,8 +53,23 @@ def handle_chat(req: ChatRequest, settings: GatewaySettings) -> ChatResponse:
         return ChatResponse(answer=reply.strip(), route=None, sources=[],
                             model_used=model_used, config=req.config)
 
-    # ---- 1. medical safety gate (before generation) -------------------------
+    # ---- 0. post-handoff contact capture -------------------------------------
+    # The handoff asks for a phone/email; when the next message is exactly that,
+    # attach it to the ticket (route stays qualified-person so the UI logs it)
+    # and thank the user — don't re-classify and repeat the handoff.
     history = _history(req.session_id)
+    if (history and history[-1]["role"] == "assistant"
+            and history[-1]["content"] == HANDOFF_MESSAGE
+            and is_contact_info(req.message)):
+        notify("qualified-person", req.session_id, req.audience, req.message)
+        _sessions[req.session_id] = (history + [
+            {"role": "user", "content": req.message},
+            {"role": "assistant", "content": CONTACT_ACK},
+        ])[-MAX_HISTORY_TURNS * 2:]
+        return ChatResponse(answer=CONTACT_ACK, route="qualified-person", sources=[],
+                            model_used="none/contact-capture", config=req.config)
+
+    # ---- 1. medical safety gate (before generation) -------------------------
     recent_user = [m["content"] for m in history if m["role"] == "user"][-2:]
     if classify_question(req.message, settings, context=recent_user):
         notify("qualified-person", req.session_id, req.audience, req.message)

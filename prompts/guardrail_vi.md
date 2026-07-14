@@ -14,8 +14,11 @@ Trả lời "YES" (cần chuyển chuyên gia) nếu câu hỏi liên quan đế
 - Đề nghị chẩn đoán, kê đơn, hay phác đồ điều trị cá nhân.
 
 Trả lời "NO" (chatbot tự trả lời được) nếu là:
+- Chào hỏi, xã giao, cảm ơn, thử nghiệm ("Hello", "xin chào", "cảm ơn em", "test").
 - Câu hỏi thông thường về sản phẩm: thành phần, công dụng chung, cách dùng chung,
-  giá, quy cách, xuất xứ.
+  giá, quy cách, xuất xứ; so sánh giữa các sản phẩm.
+- Đặt hàng, giá cả, khuyến mãi, vận chuyển/giao hàng, đổi trả
+  (ví dụ: "ship về HCM mất bao lâu?", "giá bao nhiêu?").
 - Kiến thức sức khỏe TỔNG QUÁT, mang tính giáo dục, KHÔNG gắn với bệnh lý cá nhân
   của người hỏi, ví dụ:
   • "Gợi ý cho em một thực đơn ăn uống lành mạnh."
